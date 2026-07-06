@@ -199,3 +199,11 @@ Deploy the `dist/` folder to any static host (Vercel, Netlify, GitHub Pages, etc
 - [n8n](https://n8n.io) for workflow automation
 - [Lucide](https://lucide.dev) for icons
 - [Tailwind CSS](https://tailwindcss.com) for styling
+
+---
+
+## 🚀 Live Demo
+
+🌐 **Application:** https://cosmic-palmier-2e2e9e.netlify.app/
+
+**make sure to activate n8n for chat assistant flow**
