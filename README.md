@@ -206,6 +206,6 @@ Deploy the `dist/` folder to any static host (Vercel, Netlify, GitHub Pages, etc
 
 🌐 **Application:** https://cosmic-palmier-2e2e9e.netlify.app/
 
-```
-**make sure to activate n8n for chat assistant flow**
-```
+
+**Make sure to activate n8n workflow for chat assistant flow.**
+
