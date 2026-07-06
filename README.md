@@ -192,11 +192,6 @@ Deploy the `dist/` folder to any static host (Vercel, Netlify, GitHub Pages, etc
 
 ---
 
-## License
-
-This project is open source. Add a license file if you plan to share it publicly.
-
----
 
 ## Acknowledgments
 
