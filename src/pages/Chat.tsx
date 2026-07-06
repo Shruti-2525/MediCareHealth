@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { Send, Bot, User, Trash2, AlertCircle, Webhook, RefreshCw } from 'lucide-react';
-import { supabase, type ChatMessage } from '../lib/supabase';
+import { supabase, isSupabaseConfigured, type ChatMessage } from '../lib/supabase';
 import { sendToWebhook, WEBHOOK_URL } from '../lib/webhook';
 
 const SUGGESTIONS = [
@@ -9,6 +9,16 @@ const SUGGESTIONS = [
   'Book an appointment with Dr. Priya Sharma',
   'What are your vaccination packages?',
 ];
+
+const WELCOME_MESSAGE: ChatMessage = {
+  id: 'welcome',
+  role: 'assistant',
+  content:
+    "Hi! I'm your MediCare health assistant. Tell me what you need — book a checkup, find a doctor, or ask about our services. I'll send your request to our scheduling system and show you the response.",
+  response_payload: null,
+  status: 'sent',
+  created_at: new Date().toISOString(),
+};
 
 export default function Chat() {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -29,6 +39,16 @@ export default function Chat() {
 
   async function loadMessages() {
     setHistoryLoading(true);
+
+    if (!supabase) {
+      setMessages([WELCOME_MESSAGE]);
+      if (!isSupabaseConfigured) {
+        setError('Chat history is unavailable — Supabase env vars are not configured on this deployment.');
+      }
+      setHistoryLoading(false);
+      return;
+    }
+
     const { data, error: err } = await supabase
       .from('chat_messages')
       .select('*')
@@ -60,15 +80,27 @@ export default function Chat() {
     setError(null);
     setLoading(true);
 
-    // 1. persist user message
-    const { data: userMsg } = await supabase
-      .from('chat_messages')
-      .insert({ role: 'user', content, status: 'sent' })
-      .select()
-      .single();
+    const localUserMsg: ChatMessage = {
+      id: crypto.randomUUID(),
+      role: 'user',
+      content,
+      response_payload: null,
+      status: 'sent',
+      created_at: new Date().toISOString(),
+    };
 
-    if (userMsg) {
-      setMessages((prev) => [...prev, userMsg as ChatMessage]);
+    if (supabase) {
+      const { data: userMsg } = await supabase
+        .from('chat_messages')
+        .insert({ role: 'user', content, status: 'sent' })
+        .select()
+        .single();
+
+      if (userMsg) {
+        setMessages((prev) => [...prev, userMsg as ChatMessage]);
+      }
+    } else {
+      setMessages((prev) => [...prev, localUserMsg]);
     }
 
     // 2. call webhook
@@ -78,36 +110,66 @@ export default function Chat() {
       // derive a readable summary from the raw response
       const summary = summarizeResponse(res.raw);
 
-      const { data: botMsg } = await supabase
-        .from('chat_messages')
-        .insert({
-          role: 'assistant',
-          content: summary,
-          response_payload: res.raw as Record<string, unknown>,
-          status: 'delivered',
-        })
-        .select()
-        .single();
+      if (supabase) {
+        const { data: botMsg } = await supabase
+          .from('chat_messages')
+          .insert({
+            role: 'assistant',
+            content: summary,
+            response_payload: res.raw as Record<string, unknown>,
+            status: 'delivered',
+          })
+          .select()
+          .single();
 
-      if (botMsg) {
-        setMessages((prev) => [...prev, botMsg as ChatMessage]);
+        if (botMsg) {
+          setMessages((prev) => [...prev, botMsg as ChatMessage]);
+        }
+      } else {
+        setMessages((prev) => [
+          ...prev,
+          {
+            id: crypto.randomUUID(),
+            role: 'assistant',
+            content: summary,
+            response_payload: res.raw as Record<string, unknown>,
+            status: 'delivered',
+            created_at: new Date().toISOString(),
+          },
+        ]);
       }
     } catch (e) {
       const msg = e instanceof Error ? e.message : 'Unknown error';
       setError(`Webhook call failed: ${msg}`);
 
-      const { data: errMsg } = await supabase
-        .from('chat_messages')
-        .insert({
-          role: 'assistant',
-          content: `Sorry, I couldn't reach the scheduling service right now. (${msg})`,
-          status: 'error',
-        })
-        .select()
-        .single();
+      const errorContent = `Sorry, I couldn't reach the scheduling service right now. (${msg})`;
 
-      if (errMsg) {
-        setMessages((prev) => [...prev, errMsg as ChatMessage]);
+      if (supabase) {
+        const { data: errMsg } = await supabase
+          .from('chat_messages')
+          .insert({
+            role: 'assistant',
+            content: errorContent,
+            status: 'error',
+          })
+          .select()
+          .single();
+
+        if (errMsg) {
+          setMessages((prev) => [...prev, errMsg as ChatMessage]);
+        }
+      } else {
+        setMessages((prev) => [
+          ...prev,
+          {
+            id: crypto.randomUUID(),
+            role: 'assistant',
+            content: errorContent,
+            response_payload: null,
+            status: 'error',
+            created_at: new Date().toISOString(),
+          },
+        ]);
       }
     } finally {
       setLoading(false);
@@ -116,9 +178,14 @@ export default function Chat() {
 
   async function clearChat() {
     if (!confirm('Clear all chat history? This cannot be undone.')) return;
-    await supabase.from('chat_messages').delete().neq('id', '00000000-0000-0000-0000-000000000000');
-    setMessages([]);
-    await loadMessages();
+
+    if (supabase) {
+      await supabase.from('chat_messages').delete().neq('id', '00000000-0000-0000-0000-000000000000');
+      setMessages([]);
+      await loadMessages();
+    } else {
+      setMessages([WELCOME_MESSAGE]);
+    }
   }
 
   return (
